@@ -193,12 +193,45 @@ four metric columns specific to the phase.
 | Field        | Meaning                                                                              |
 | ------------ | ------------------------------------------------------------------------------------ |
 | `name`, `area`, `type`, `lea` | School name, borough/town, classification, DfE LEA code (3-digit).  |
-| `region`     | One of `manchester`, `london`, `other` — drives the region-tab filter.               |
+| `region`     | One of `manchester`, `london`, `cambridge`, `other` — drives the region-tab filter. |
+| `urn`        | DfE Unique Reference Number — the join key used to merge destination data.           |
 | `priv`       | Present and `true` for independent / non-maintained schools (KS4 only).              |
 | `rwm, hs, read, maths, gps` | Raw KS2: RWM-expected %, RWM-higher %, reading / maths / GPS scaled scores. |
 | `pe, ph, pr, pm, pg` | National percentiles for RWM-expected / RWM-higher / reading / maths / GPS. |
 | `lh, lr, lm, lg` | Within-LA percentile ranks (the 11+ Readiness inputs). 50 for solo-school LAs.   |
+| `d_sust, d_edu, d_appr, d_emp` | Secondary post-16 destinations (sustained / education / apprenticeship / employment %), merged from the KS4 destinations file. Absent until that file is added. |
+| `d_gram`     | Optional primary→grammar %, merged from a user-supplied file (see below). Absent by default. |
 | `_lc`        | Pre-lowercased name; populated at runtime to make the search filter allocation-free. |
+
+---
+
+## Student destinations (separate, opt-in data)
+
+The performance tables carry **attainment only** — destinations are separate DfE
+datasets, so the **Destinations** view in the app is empty until you add them.
+`build_data.py` merges any of these files (by **URN**) if present in the source
+directory; if a file is missing, the merge is a silent no-op.
+
+| File (in the source dir)            | Feeds                | Phase     |
+| ----------------------------------- | -------------------- | --------- |
+| `england_ks4-destinations.csv`      | `d_sust/d_edu/d_appr/d_emp` | Secondary |
+| `england_16-18-destinations.csv`    | `d18_he/d18_sust`    | Secondary (sixth forms) |
+| `primary-destinations.csv` (yours)  | `d_gram`             | Primary   |
+
+Download the institution-level CSVs from DfE Explore Education Statistics
+([KS4 destinations](https://explore-education-statistics.service.gov.uk/find-statistics/key-stage-4-destination-measures),
+[16-18 destinations](https://explore-education-statistics.service.gov.uk/find-statistics/16-18-destination-measures)).
+Column names are matched case/punctuation-insensitively against common variants
+(`overall`, `education`, `apprenticeships`, `employment`, `higher_education`, …);
+all-pupils total rows are used when a breakdown column is present; cohorts <6 are
+suppressed by DfE.
+
+**Primary → grammar.** There is **no public dataset** of which primary pupils
+enter grammar schools (true flows need restricted pupil-level NPD access). So the
+primary Destinations view shows the existing **11+ Readiness** index as a
+labelled *proxy*. To plug in real figures, drop a `primary-destinations.csv` with:
+- a join key: `urn` (preferred), else `name` + `area`
+- a measure: `pct_grammar`, **or** `n_grammar` + `n_total`
 
 ---
 
