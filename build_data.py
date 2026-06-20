@@ -98,6 +98,16 @@ def parse_num(v):
         return None
 
 
+def parse_int(v):
+    """Parse an integer identifier (e.g. URN); None if blank/non-numeric."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v.isdigit():
+        return None
+    return int(v)
+
+
 def is_priv(nftype: str) -> bool:
     return nftype in {"IND", "INDSS", "NMSS"}
 
@@ -211,6 +221,7 @@ def build_secondary(src_dir):
                 "area": lea_area(lea, row.get("TOWN", "")),
                 "type": classify_secondary(row),
                 "lea": lea,
+                "urn": parse_int(row.get("URN")),
                 "region": lea_region(lea),
                 "a8": round(a8, 1),
                 "em": round(em, 1),
@@ -243,6 +254,7 @@ def build_primary(src_dir):
                 "area": lea_area(lea, row.get("TOWN", "")),
                 "type": classify_primary(row),
                 "lea": lea,
+                "urn": parse_int(row.get("URN")),
                 "region": lea_region(lea),
                 "rwm": round(rwm, 1),
                 "hs": round(hs, 1),
@@ -280,6 +292,175 @@ def build_primary(src_dir):
             for k, i in enumerate(idxs):
                 rows[i][key] = round(pcts[k], 1)
     return rows
+
+
+# ── Student-destination merge ────────────────────────────────────────────────
+# Destination measures are NOT in the academic performance tables; they are
+# separate DfE datasets (Key stage 4 destination measures, 16-18 destination
+# measures) plus an optional user-supplied primary->grammar file. These helpers
+# read whichever destination CSVs are present in SRC_DIR and merge their fields
+# onto the already-built school records, keyed by URN. If a file is absent the
+# merge is a silent no-op, so the academic build is unchanged. Column names vary
+# between DfE releases, so columns are matched case/punctuation-insensitively
+# against a list of candidates (see README for the expected files/columns).
+
+def _norm(s):
+    """Lowercase, strip everything but a-z0-9 — for fuzzy header matching."""
+    return "".join(c for c in (s or "").lower() if c.isalnum())
+
+
+def _pick(row, norm_keys, candidates):
+    """Return parse_num() of the first candidate column present in the row.
+
+    norm_keys maps normalised-header -> original-header for this row's reader.
+    """
+    for cand in candidates:
+        key = norm_keys.get(_norm(cand))
+        if key is not None:
+            return parse_num(row.get(key))
+    return None
+
+
+def _pick_raw(row, norm_keys, candidates):
+    """Like _pick but returns the raw string (for id/text columns)."""
+    for cand in candidates:
+        key = norm_keys.get(_norm(cand))
+        if key is not None:
+            return (row.get(key) or "").strip()
+    return None
+
+
+# EES "underlying data" is often long-format with a breakdown column; we keep
+# only the all-pupils total rows.
+_TOTAL_MARKERS = {"total", "totalpupils", "allpupils", "all", "totalstudents",
+                  "allstudents", "totalcohort"}
+_BREAKDOWN_COLS = {"characteristic", "characteristictype", "breakdown",
+                   "breakdowntopic", "pupilcharacteristic", "characteristicgroup"}
+
+# Candidate column names per destination metric (matched fuzzily).
+_C_URN = ["urn", "schoolurn", "school_urn", "estaburn", "institutionurn"]
+_KS4 = {
+    "d_sust": ["overall", "overallpercent", "overalldest", "sustainedoverall",
+               "sustainedpercent", "overalldestinationpercent", "alldestinations"],
+    "d_edu":  ["education", "educationpercent", "sustainededucation",
+               "alleducation", "educationdest", "ineducation"],
+    "d_appr": ["apprenticeships", "apprenticeship", "apprenticeshippercent", "appren"],
+    "d_emp":  ["employment", "employmentpercent", "inemployment", "employ"],
+}
+_KS5 = {
+    "d18_he":   ["highereducation", "he", "hepercent", "progressionhe",
+                 "sustainedhe", "educationhighereducation"],
+    "d18_sust": ["overall", "overallpercent", "sustainedoverall",
+                 "sustainedpercent", "overalldestinationpercent"],
+}
+
+
+def _csv_reader(path):
+    """Yield (row, norm_keys) for each CSV row; norm_keys maps normalised
+    header -> original header. Skips non-total breakdown rows when present."""
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            return
+        norm_keys = {_norm(h): h for h in reader.fieldnames}
+        breakdown_col = next((norm_keys[c] for c in _BREAKDOWN_COLS
+                              if c in norm_keys), None)
+        for row in reader:
+            if breakdown_col is not None:
+                val = _norm(row.get(breakdown_col))
+                if val and val not in _TOTAL_MARKERS:
+                    continue
+            yield row, norm_keys
+
+
+def _merge_by_urn(path, records, metrics, label):
+    """Merge `metrics` (dest_key -> candidate column names) from `path` onto
+    `records` (list of school dicts) matched by URN. Returns #records updated."""
+    if not os.path.isfile(path):
+        return 0
+    by_urn = {}
+    for row, nk in _csv_reader(path):
+        urn = parse_int(_pick_raw(row, nk, _C_URN))
+        if urn is None:
+            continue
+        vals = {k: _pick(row, nk, cands) for k, cands in metrics.items()}
+        vals = {k: round(v, 1) for k, v in vals.items() if v is not None}
+        if vals:
+            by_urn[urn] = vals
+    hits = 0
+    for r in records:
+        v = by_urn.get(r.get("urn"))
+        if v:
+            r.update(v)
+            hits += 1
+    print(f"  {label}: matched {hits}/{len(records)} schools "
+          f"from {os.path.basename(path)}", file=sys.stderr)
+    return hits
+
+
+def merge_ks4_destinations(src_dir, sec):
+    """Merge post-16 destinations (education/apprenticeship/employment/sustained)
+    onto secondary records from england_ks4-destinations.csv if present."""
+    for fn in ("england_ks4-destinations.csv", "ks4-destinations.csv"):
+        path = os.path.join(src_dir, fn)
+        if os.path.isfile(path):
+            return _merge_by_urn(path, sec, _KS4, "KS4 destinations")
+    return 0
+
+
+def merge_ks5_destinations(src_dir, sec):
+    """Merge 16-18 destinations (HE progression/sustained) onto secondary records
+    with matching URNs (i.e. schools with sixth forms). Standalone colleges
+    without a KS4 record are out of scope for now."""
+    for fn in ("england_16-18-destinations.csv", "england_ks5-destinations.csv",
+               "16-18-destinations.csv"):
+        path = os.path.join(src_dir, fn)
+        if os.path.isfile(path):
+            return _merge_by_urn(path, sec, _KS5, "16-18 destinations")
+    return 0
+
+
+def merge_primary_destinations(src_dir, pri):
+    """Merge a user-supplied primary->grammar file onto primary records.
+
+    Join key: urn (preferred), else name+area (case-insensitive).
+    Measure: pct_grammar, or n_grammar + n_total -> percentage. Emits d_gram."""
+    path = next((os.path.join(src_dir, fn) for fn in
+                 ("primary-destinations.csv", "england_primary-destinations.csv")
+                 if os.path.isfile(os.path.join(src_dir, fn))), None)
+    if path is None:
+        return 0
+
+    # Index primary records by each possible join key.
+    by_urn = {r["urn"]: r for r in pri if r.get("urn")}
+    by_name = {}
+    for r in pri:
+        by_name.setdefault((_norm(r["name"]), _norm(r["area"])), r)
+
+    hits = 0
+    for row, nk in _csv_reader(path):
+        urn = parse_int(_pick_raw(row, nk, _C_URN))
+        rec = by_urn.get(urn)
+        if rec is None:
+            nm = _pick_raw(row, nk, ["name", "schname", "schoolname"])
+            ar = _pick_raw(row, nk, ["area", "town", "la", "laname"])
+            if nm:
+                rec = by_name.get((_norm(nm), _norm(ar)))
+        if rec is None:
+            continue
+        pct = _pick(row, nk, ["pctgrammar", "grammarpercent", "pctselective",
+                              "selectivepercent", "grammar", "selective"])
+        if pct is None:
+            n_g = _pick(row, nk, ["ngrammar", "grammarcount", "countgrammar"])
+            n_t = _pick(row, nk, ["ntotal", "cohort", "totalcount", "total"])
+            if n_g is not None and n_t:
+                pct = 100.0 * n_g / n_t
+        if pct is not None:
+            rec["d_gram"] = round(pct, 1)
+            hits += 1
+    print(f"  primary->grammar: matched {hits}/{len(pri)} schools "
+          f"from {os.path.basename(path)}", file=sys.stderr)
+    return hits
 
 
 def inject_inline():
@@ -335,6 +516,12 @@ def build(src_dir, out_dir):
     print("Building primary…", file=sys.stderr)
     pri = build_primary(src_dir)
     print(f"  {len(pri)} primary schools", file=sys.stderr)
+
+    # Merge student-destination datasets where present (no-op if files absent).
+    print("Merging destinations…", file=sys.stderr)
+    merge_ks4_destinations(src_dir, sec)
+    merge_ks5_destinations(src_dir, sec)
+    merge_primary_destinations(src_dir, pri)
 
     sec_json = json.dumps(sec, separators=(",", ":"), ensure_ascii=False)
     pri_json = json.dumps(pri, separators=(",", ":"), ensure_ascii=False)
