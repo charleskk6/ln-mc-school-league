@@ -55,6 +55,11 @@ LONDON = {
     318: "Richmond upon Thames", 319: "Sutton", 320: "Waltham Forest",
 }
 
+# Cambridgeshire county LEA (873 — Cambridge city plus Ely, Huntingdon, March,
+# St Neots, Wisbech). Peterborough (874) is a separate unitary authority and is
+# not included. Areas within fall back to the town name (Cambridge, Ely, …).
+CAMBS = {873: "Cambridgeshire"}
+
 
 def lea_area(lea_code: int, town: str) -> str:
     """Borough name for curated regions, town fallback elsewhere."""
@@ -62,7 +67,11 @@ def lea_area(lea_code: int, town: str) -> str:
         return GM[lea_code]
     if lea_code in LONDON:
         return LONDON[lea_code]
-    return town.title() if town else f"LEA {lea_code}"
+    if town:
+        return town.title()
+    if lea_code in CAMBS:
+        return CAMBS[lea_code]
+    return f"LEA {lea_code}"
 
 
 def lea_region(lea_code: int) -> str:
@@ -70,6 +79,8 @@ def lea_region(lea_code: int) -> str:
         return "manchester"
     if lea_code in LONDON:
         return "london"
+    if lea_code in CAMBS:
+        return "cambridge"
     return "other"
 
 

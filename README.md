@@ -7,9 +7,9 @@ tables. The page is fully self-contained: open `index.html` in any browser
 step, no dependencies.
 
 Coverage: **4,067 secondary** (KS4) and **15,056 primary** (KS2) schools.
-Quick filters for Greater Manchester (10 boroughs) and Greater London (33
-boroughs), plus an "All England" view; instant search by school name across
-the full national dataset.
+Quick filters for Greater Manchester (10 boroughs), Greater London (33
+boroughs) and Cambridgeshire (county), plus an "All England" view; instant
+search by school name across the full national dataset.
 
 ---
 
@@ -74,7 +74,7 @@ What it does:
    affiliation (RC/CofE/Jewish/Muslim/Hindu/Sikh/Methodist/Quaker) where
    present.
 4. **Maps** the DfE LEA code to a borough/area name and tags Greater
-   Manchester / Greater London / other.
+   Manchester / Greater London / Cambridgeshire / other.
 5. **Computes** the ranking scores (see *Ranking algorithms* below), including
    national percentiles and within-LA percentiles for the primary indices.
 6. **Writes** `secondary.json` + `primary.json` into `OUT_DIR`.
