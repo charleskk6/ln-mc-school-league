@@ -225,6 +225,13 @@ text-overflow: ellipsis;
 }
 thead th:nth-child(2) { text-align: left; }
 
+/* ── Sortable column headers ── */
+thead th.sortable { cursor: pointer; user-select: none; transition: color .15s, background .15s; }
+thead th.sortable:hover { color: var(--text); background: #131c2e; }
+thead th.sortable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+thead th.sorted { color: var(--accent2); }
+.sort-arrow { font-size: 9px; }
+
 /* Column sizing — percentages so the school col stays bounded no matter
    how wide the container is. Adds up to 100 across 7 cols. */
 thead th:nth-child(1), tbody td:nth-child(1) { width: 6%; }
@@ -896,7 +903,7 @@ thead th:nth-child(4), tbody td:nth-child(4) { width: 16%; }
   <div class="notes">
     <strong>📌 Data Notes &amp; Caveats</strong>
     <ul>
-      <li>Use the <strong>Academic year</strong> dropdown to switch between published years (currently <strong>2024/25</strong> and <strong>2023/24</strong>) — the whole table reloads for that year. Use the <strong>Secondary / Primary toggle</strong> to switch phase: secondary schools are ranked by <strong>SQS</strong> from GCSE data; primary schools by one of three <strong>percentile indices</strong> from KS2 SATs data, chosen from the "Rank by" selector. The <strong>region tabs</strong> and <strong>type checkboxes</strong> apply to whichever phase is active.</li>
+      <li>Use the <strong>Academic year</strong> dropdown to switch between published years (currently <strong>2024/25</strong> and <strong>2023/24</strong>) — the whole table reloads for that year. Use the <strong>Secondary / Primary toggle</strong> to switch phase: secondary schools are ranked by <strong>SQS</strong> from GCSE data; primary schools by one of three <strong>percentile indices</strong> from KS2 SATs data, chosen from the "Rank by" selector. The <strong>region tabs</strong> and <strong>type checkboxes</strong> apply to whichever phase is active. <strong>Click any column header</strong> to re-sort the table by that column (click again to flip the direction); the score column restores the default league ranking.</li>
       <li><strong>Secondary (SQS)</strong> uses Attainment 8, Grade 5+ English &amp; Maths, EBacc APS and EBacc Entry, each normalised against the England average (100 = average). <strong>Primary</strong> uses RWM expected, RWM higher, and an <strong>English</strong> scaled score (the reading and <strong>grammar-punctuation-spelling, GPS</strong>, ranks averaged, since both are English-domain) balanced 1:1 with the maths scaled score. It offers the <strong>Academic Performance Index</strong> (40% expected / 40% higher / 10% English / 10% maths), <strong>Grammar School Readiness</strong> (50% higher / 25% English / 25% maths) and <strong>11+ Readiness</strong> (the same 50/25/25 blend, but ranked as a <em>local</em> percentile within each school's own local authority). For API and Grammar Readiness each input is a national percentile (0–100) computed against the full England KS2 dataset; 11+ Readiness instead percentile-ranks each school against the others in its local authority. Using percentiles throughout keeps the scaled-score signals from being double-counted on mismatched scales, and the local percentile is robust to a single outlier school.</li>
       <li><strong>Progress measures are unavailable for 2025/26</strong> at both key stages — COVID-19 disrupted the 2020/21 baseline assessments — so both formulas use attainment only. They are expected to return in 2027.</li>
       <li>Many figures (especially EBacc entry, and all <strong>independent / prep school</strong> values) are <strong>approximate / illustrative</strong> where exact 2025 published data was not available; independents largely sit IGCSEs/internal assessments outside DfE reporting. Treat rankings as indicative.</li>
@@ -988,20 +995,20 @@ const PHASES = {
   secondary: {
     score: sqs, style: sqsStyle, badge: "SQS ★", benchmark: benchmark, barField: "a8",
     cols: [
-      { head: "Attainment 8",       bar: "a8", fmt: s => s.a8 },
-      { head: "Gr.5+ Eng &amp; Maths", fmt: s => s.em + "%" },
-      { head: "EBacc APS",          fmt: s => s.aps },
-      { head: "EBacc Entry",        fmt: s => s.ent + "%" },
+      { head: "Attainment 8",       key: "a8",  bar: "a8", fmt: s => s.a8 },
+      { head: "Gr.5+ Eng &amp; Maths", key: "em",  fmt: s => s.em + "%" },
+      { head: "EBacc APS",          key: "aps", fmt: s => s.aps },
+      { head: "EBacc Entry",        key: "ent", fmt: s => s.ent + "%" },
     ],
   },
   primary: {
     score: pqs, style: pctStyle, badge: "API ★", benchmark: priBenchmark, barField: "rwm",
     cols: [
-      { head: "RWM Expected",  bar: "rwm", fmt: s => s.rwm + "%" },
-      { head: "RWM Higher",         fmt: s => s.hs + "%" },
-      { head: "Reading SS",         fmt: s => s.read },
-      { head: "Maths SS",           fmt: s => s.maths },
-      { head: "GPS SS",             fmt: s => s.gps },
+      { head: "RWM Expected",  key: "rwm", bar: "rwm", fmt: s => s.rwm + "%" },
+      { head: "RWM Higher",         key: "hs",    fmt: s => s.hs + "%" },
+      { head: "Reading SS",         key: "read",  fmt: s => s.read },
+      { head: "Maths SS",           key: "maths", fmt: s => s.maths },
+      { head: "GPS SS",             key: "gps",   fmt: s => s.gps },
     ],
   },
 };
@@ -1063,6 +1070,9 @@ let currentPhase  = 'secondary';
 let currentCity   = 'manchester';
 let currentSearch = '';
 let currentYear   = '2024-2025';
+// League-table sort. key '_score' = rank by the phase score (default league
+// order); '_name' = alphabetical; otherwise a metric column key. dir 'asc'/'desc'.
+let currentSort   = { key: '_score', dir: 'desc' };
 
 // Pinned schools — kept across phases, regions and years.
 // Identity = `${name}|${lea}` so a school stays pinned even when its yearly
@@ -1146,10 +1156,27 @@ function render() {
     .filter(s => active.includes(category(s)))
     .filter(s => !q || s._lc.includes(q));
 
-  // Sort by score descending, then attach the benchmark row at the foot.
+  // If the active sort column doesn't exist in this phase (e.g. after a
+  // phase switch), fall back to the default league order.
+  const validKeys = ['_score', '_name', ...phaseCfg.cols.map(c => c.key)];
+  if (!validKeys.includes(currentSort.key)) currentSort = { key: '_score', dir: 'desc' };
+
+  // Score-rank everything, then re-order by the active sort column. The
+  // benchmark row is attached at the foot afterwards (never sorted in).
+  const dir = currentSort.dir === 'asc' ? 1 : -1;
+  const sortVal = currentSort.key === '_score'
+    ? (s => s._v)
+    : currentSort.key === '_name'
+      ? (s => s.name)
+      : (s => s[currentSort.key]);
   const ranked = filtered
     .map(s => ({...s, _v: parseFloat(phaseCfg.score(s))}))
-    .sort((a, b) => b._v - a._v);
+    .sort((a, b) => {
+      const av = sortVal(a), bv = sortVal(b);
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      // Stable tie-break on score (descending) so equal values stay meaningful.
+      return cmp !== 0 ? cmp * dir : b._v - a._v;
+    });
 
   // Cap visible rows to keep DOM small.
   const cap = q ? SEARCH_CAP : RENDER_CAP;
@@ -1172,30 +1199,41 @@ function render() {
 
   updateTabSubLabels();
 
-  thead.innerHTML = buildHeader(phaseCfg);
+  thead.innerHTML = buildHeader(phaseCfg, true);
+  // Medals only make sense in the default league order (score, descending).
+  const ranked_order = currentSort.key === '_score' && currentSort.dir === 'desc';
   let html = '';
   let rank = 0;
   list.forEach(s => {
     if (!s.benchmark) rank++;
-    html += buildRow(s, rank, phaseCfg, maxBar);
+    html += buildRow(s, rank, phaseCfg, maxBar, ranked_order);
   });
   tbody.innerHTML = html;
 
   renderPinnedSection();
 }
 
-function buildHeader(phaseCfg) {
+function buildHeader(phaseCfg, sortable = false) {
   // Header for the active phase (primary badge follows the chosen index).
   const badge = currentPhase === 'primary' ? PRI_INDICES[currentPriIndex].short + ' ★' : phaseCfg.badge;
+  // A sortable header carries data-sort and an arrow showing the active column.
+  const th = (label, key, align) => {
+    const a = align ? ` style="text-align:${align}"` : '';
+    if (!sortable) return `<th${a}>${label}</th>`;
+    const active = currentSort.key === key;
+    const arrow = active ? (currentSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    const cls = `sortable${active ? ' sorted' : ''}`;
+    return `<th${a} class="${cls}" data-sort="${key}" role="button" tabindex="0" aria-sort="${active ? (currentSort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${label}<span class="sort-arrow">${arrow}</span></th>`;
+  };
   return `<tr>
       <th>#</th>
-      <th style="text-align:left">School</th>
-      <th>${badge}</th>
-      ${phaseCfg.cols.map(c => `<th>${c.head}</th>`).join('')}
+      ${th('School', '_name', 'left')}
+      ${th(badge, '_score')}
+      ${phaseCfg.cols.map(c => th(c.head, c.key)).join('')}
     </tr>`;
 }
 
-function buildRow(s, rank, phaseCfg, maxBar) {
+function buildRow(s, rank, phaseCfg, maxBar, showMedals = true) {
   const sc = phaseCfg.score(s);
   const st = phaseCfg.style(sc);
   const cells = phaseCfg.cols.map(c => {
@@ -1210,7 +1248,9 @@ function buildRow(s, rank, phaseCfg, maxBar) {
     : `<button type="button" class="pin-btn ${isPinned(s) ? 'pinned' : ''}" data-key="${schoolKey(s).replace(/"/g, '&quot;')}" aria-label="${isPinned(s) ? 'Unpin' : 'Pin'} ${s.name.replace(/"/g, '&quot;')}" title="${isPinned(s) ? 'Unpin' : 'Pin'} this school">${isPinned(s) ? '★' : '☆'}</button>`;
   return `
     <tr class="${s.benchmark?'benchmark':''}">
-      <td class="rank-cell">${medal(rank-1, s.benchmark)}</td>
+      <td class="rank-cell">${showMedals
+          ? medal(rank-1, s.benchmark)
+          : (s.benchmark ? '<span style="color:#374151">—</span>' : `<span style="color:#64748b;font-family:'JetBrains Mono',monospace;font-size:12px">#${rank}</span>`)}</td>
       <td>
         <div class="school-cell">
           ${pinHTML}
@@ -1257,6 +1297,27 @@ document.getElementById('regionTabs').addEventListener('click', e => {
   btn.classList.add('active');
   currentCity = btn.dataset.city;
   render();
+});
+
+// Click (or Enter/Space) a sortable column header to sort the table by it.
+// Same column toggles direction; a new column starts descending (ascending
+// for the alphabetical School column, which reads more naturally A→Z first).
+function applySort(key) {
+  if (currentSort.key === key) {
+    currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSort = { key, dir: key === '_name' ? 'asc' : 'desc' };
+  }
+  render();
+}
+thead.addEventListener('click', e => {
+  const th = e.target.closest('th.sortable');
+  if (th) applySort(th.dataset.sort);
+});
+thead.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const th = e.target.closest('th.sortable');
+  if (th) { e.preventDefault(); applySort(th.dataset.sort); }
 });
 
 document.getElementById('phaseSwitch').addEventListener('click', e => {
