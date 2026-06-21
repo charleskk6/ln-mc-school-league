@@ -352,6 +352,7 @@ _KS5 = {  # england_ks5-studest.csv (16-18 study leavers -> post-18 destination)
     "d18_sust": ["tot_overallper", "totoverallper", "overallper", "overallpercent"],
 }
 _KS5HE = {  # england_ks5-studest-he.csv (progression to higher education/training)
+    "d18_cohort": ["all_cohort", "allcohort"],
     "d18_prog": ["all_progressed", "allprogressed", "progressed"],
     "d18_top3": ["all_top3rd", "alltop3rd", "top3rd", "topthird"],
 }
@@ -391,7 +392,7 @@ def _merge_by_urn(path, records, metrics, label):
         if urn is None:
             continue
         vals = {k: _pick(row, nk, cands) for k, cands in metrics.items()}
-        vals = {k: round(v, 1) for k, v in vals.items() if v is not None}
+        vals = {k: (int(v) if v == int(v) else round(v, 1)) for k, v in vals.items() if v is not None}
         if vals:
             by_urn[urn] = vals
     hits = 0
