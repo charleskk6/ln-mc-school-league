@@ -337,21 +337,23 @@ _TOTAL_MARKERS = {"total", "totalpupils", "allpupils", "all", "totalstudents",
 _BREAKDOWN_COLS = {"characteristic", "characteristictype", "breakdown",
                    "breakdowntopic", "pupilcharacteristic", "characteristicgroup"}
 
-# Candidate column names per destination metric (matched fuzzily).
+# Candidate column names per destination metric. The exact DfE
+# performance-tables percentage codes are listed FIRST so they win over the
+# raw-count columns (e.g. OVERALL_DESTPER before any generic "overall").
 _C_URN = ["urn", "schoolurn", "school_urn", "estaburn", "institutionurn"]
-_KS4 = {
-    "d_sust": ["overall", "overallpercent", "overalldest", "sustainedoverall",
-               "sustainedpercent", "overalldestinationpercent", "alldestinations"],
-    "d_edu":  ["education", "educationpercent", "sustainededucation",
-               "alleducation", "educationdest", "ineducation"],
-    "d_appr": ["apprenticeships", "apprenticeship", "apprenticeshippercent", "appren"],
-    "d_emp":  ["employment", "employmentpercent", "inemployment", "employ"],
+_KS4 = {  # england_ks4-pupdest.csv (pupils at end of KS4 -> post-16 destination)
+    "d_sust": ["overall_destper", "overalldestper", "overallpercent", "overall"],
+    "d_edu":  ["educationper", "educationpercent", "education"],
+    "d_appr": ["apprenper", "apprenticeshipper", "apprenticeshipspercent", "appren"],
+    "d_emp":  ["employmentper", "employmentpercent", "employment"],
 }
-_KS5 = {
-    "d18_he":   ["highereducation", "he", "hepercent", "progressionhe",
-                 "sustainedhe", "educationhighereducation"],
-    "d18_sust": ["overall", "overallpercent", "sustainedoverall",
-                 "sustainedpercent", "overalldestinationpercent"],
+_KS5 = {  # england_ks5-studest.csv (16-18 study leavers -> post-18 destination)
+    "d18_he":   ["tot_heper", "totheper", "heper", "hepercent"],
+    "d18_sust": ["tot_overallper", "totoverallper", "overallper", "overallpercent"],
+}
+_KS5HE = {  # england_ks5-studest-he.csv (progression to higher education/training)
+    "d18_prog": ["all_progressed", "allprogressed", "progressed"],
+    "d18_top3": ["all_top3rd", "alltop3rd", "top3rd", "topthird"],
 }
 
 
@@ -380,6 +382,11 @@ def _merge_by_urn(path, records, metrics, label):
         return 0
     by_urn = {}
     for row, nk in _csv_reader(path):
+        # DfE files carry school (RECTYPE=1) plus LA/National aggregate rows;
+        # keep only individual schools.
+        rectype = _pick_raw(row, nk, ["rectype"])
+        if rectype not in (None, "", "1"):
+            continue
         urn = parse_int(_pick_raw(row, nk, _C_URN))
         if urn is None:
             continue
@@ -399,9 +406,10 @@ def _merge_by_urn(path, records, metrics, label):
 
 
 def merge_ks4_destinations(src_dir, sec):
-    """Merge post-16 destinations (education/apprenticeship/employment/sustained)
-    onto secondary records from england_ks4-destinations.csv if present."""
-    for fn in ("england_ks4-destinations.csv", "ks4-destinations.csv"):
+    """Merge post-16 destinations (sustained/education/apprenticeship/employment)
+    onto secondary records from the DfE KS4 pupil-destinations file."""
+    for fn in ("england_ks4-pupdest.csv", "england_ks4-destinations.csv",
+               "ks4-destinations.csv"):
         path = os.path.join(src_dir, fn)
         if os.path.isfile(path):
             return _merge_by_urn(path, sec, _KS4, "KS4 destinations")
@@ -409,15 +417,23 @@ def merge_ks4_destinations(src_dir, sec):
 
 
 def merge_ks5_destinations(src_dir, sec):
-    """Merge 16-18 destinations (HE progression/sustained) onto secondary records
-    with matching URNs (i.e. schools with sixth forms). Standalone colleges
-    without a KS4 record are out of scope for now."""
-    for fn in ("england_16-18-destinations.csv", "england_ks5-destinations.csv",
-               "16-18-destinations.csv"):
+    """Merge 16-18 destinations (sustained / HE) onto secondary records with
+    matching URNs (i.e. schools with sixth forms), then overlay the progression
+    measures (progressed to level 4+, top-third HE) from the HE file. Standalone
+    colleges without a KS4 record are out of scope for now."""
+    hits = 0
+    for fn in ("england_ks5-studest.csv", "england_16-18-destinations.csv",
+               "england_ks5-destinations.csv", "16-18-destinations.csv"):
         path = os.path.join(src_dir, fn)
         if os.path.isfile(path):
-            return _merge_by_urn(path, sec, _KS5, "16-18 destinations")
-    return 0
+            hits = _merge_by_urn(path, sec, _KS5, "16-18 destinations")
+            break
+    for fn in ("england_ks5-studest-he.csv", "england_ks5-he.csv"):
+        path = os.path.join(src_dir, fn)
+        if os.path.isfile(path):
+            _merge_by_urn(path, sec, _KS5HE, "16-18 HE progression")
+            break
+    return hits
 
 
 def merge_primary_destinations(src_dir, pri):

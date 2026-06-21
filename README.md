@@ -214,9 +214,16 @@ directory; if a file is missing, the merge is a silent no-op.
 
 | File (in the source dir)            | Feeds                | Phase     |
 | ----------------------------------- | -------------------- | --------- |
-| `england_ks4-destinations.csv`      | `d_sust/d_edu/d_appr/d_emp` | Secondary |
-| `england_16-18-destinations.csv`    | `d18_he/d18_sust`    | Secondary (sixth forms) |
+| `england_ks4-pupdest.csv`           | `d_sust/d_edu/d_appr/d_emp` (post-16) | Secondary |
+| `england_ks5-studest.csv`           | `d18_he/d18_sust` (post-18)  | Secondary (sixth forms) |
+| `england_ks5-studest-he.csv`        | `d18_prog/d18_top3` (HE progression) | Secondary (sixth forms) |
 | `primary-destinations.csv` (yours)  | `d_gram`             | Primary   |
+
+These are the DfE performance-tables destination files (uppercase column codes,
+`RECTYPE=1` rows = schools, percentages with a `%` suffix). The exact percentage
+codes are matched first — e.g. `OVERALL_DESTPER`, `EDUCATIONPER`, `APPRENPER`,
+`EMPLOYMENTPER` (KS4); `TOT_OVERALLPER`, `TOT_HEPER` (KS5); `ALL_PROGRESSED`,
+`ALL_TOP3RD` (KS5 HE) — so the count columns are never mistaken for percentages.
 
 Download the institution-level CSVs from DfE Explore Education Statistics
 ([KS4 destinations](https://explore-education-statistics.service.gov.uk/find-statistics/key-stage-4-destination-measures),
