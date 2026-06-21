@@ -219,9 +219,7 @@ letter-spacing: 1px;
 text-transform: uppercase;
 color: var(--muted);
 border-bottom: 1px solid var(--border);
-white-space: nowrap;
-overflow: hidden;
-text-overflow: ellipsis;
+white-space: normal;
 }
 thead th:nth-child(2) { text-align: left; }
 
@@ -547,6 +545,7 @@ box-shadow: 0 0 0 1px var(--accent);
 .pri-only { display: none; }
 body.phase-primary .sec-only { display: none; }
 body.phase-primary .pri-only { display: block; }
+body.phase-primary #viewSwitch [data-view="destinations"] { display: none; }
 
 /* ── Footnotes ── */
 .notes {
@@ -614,10 +613,9 @@ thead th:nth-child(4), tbody td:nth-child(4) { width: 16%; }
 <!-- ══ HERO ══ -->
 
 <div class="hero">
-  <div class="pill">Greater Manchester · Greater London · Cambridgeshire · 2025 Results</div>
+  <div class="pill">Greater Manchester · Greater London · 2025 Results</div>
   <h1>School<br>League Tables</h1>
   <p>Secondary schools are ranked by the <strong>School Quality Score (SQS)</strong> from GCSE data, normalised against the England average. Primary schools are ranked by a choice of three <strong>percentile indices</strong> from KS2 SATs data — an <strong>Academic Performance Index</strong>, a <strong>Grammar School Readiness</strong> index, or <strong>11+ Readiness</strong> within each local authority. Use the toggle to switch phase, then the tabs and filters below.</p>
-  <a href="pathways.html" style="position:relative;z-index:1;display:inline-block;margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:12px;text-decoration:none;color:var(--accent2);border:1px solid var(--border);border-radius:100px;padding:7px 16px">🧭 Composite Education Pathways — Trafford &amp; Selective London →</a>
 </div>
 
 <div class="wrap">
@@ -847,10 +845,6 @@ thead th:nth-child(4), tbody td:nth-child(4) { width: 16%; }
       <span class="tab-emoji">🎡</span>
       <span class="tab-text">Greater London<span class="tab-sub" data-city="london">33 boroughs</span></span>
     </button>
-    <button class="tab" data-city="cambridge">
-      <span class="tab-emoji">🎓</span>
-      <span class="tab-text">Cambridgeshire<span class="tab-sub" data-city="cambridge">county</span></span>
-    </button>
     <button class="tab" data-city="all">
       <span class="tab-emoji">🏴󠁧󠁢󠁥󠁮󠁧󠁿</span>
       <span class="tab-text">All England<span class="tab-sub" data-city="all">national</span></span>
@@ -917,14 +911,14 @@ thead th:nth-child(4), tbody td:nth-child(4) { width: 16%; }
       <li><strong>Progress measures are unavailable for 2025/26</strong> at both key stages — COVID-19 disrupted the 2020/21 baseline assessments — so both formulas use attainment only. They are expected to return in 2027.</li>
       <li>Many figures (especially EBacc entry, and all <strong>independent / prep school</strong> values) are <strong>approximate / illustrative</strong> where exact 2025 published data was not available; independents largely sit IGCSEs/internal assessments outside DfE reporting. Treat rankings as indicative.</li>
       <li>The <strong>England Average</strong> row appears at the foot of every table. For secondary it sits at SQS 100 (the national average by definition); for primary it shows the England-average school's position on the 0–100 percentile scale (≈49 for the API).</li>
-      <li>The dataset covers <strong>all ~15,000 state-funded primaries and ~4,000 secondaries in England</strong>. Region tabs filter to Greater Manchester, Greater London, Cambridgeshire or All England; the table shows the top 500 by score (top 100 when searching) and scrolls horizontally on narrow screens. Independent/prep figures are approximate where exact published data was unavailable.</li>
+      <li>The dataset covers <strong>all ~15,000 state-funded primaries and ~4,000 secondaries in England</strong>. Region tabs filter to Greater Manchester, Greater London or All England; the table shows the top 500 by score (top 100 when searching) and scrolls horizontally on narrow screens. Independent/prep figures are approximate where exact published data was unavailable.</li>
     </ul>
   </div>
 
 </div><!-- /wrap -->
 
 <div class="footer">
-  Generated with custom SQS &amp; percentile indices · Secondary &amp; Primary · Greater Manchester · Greater London · Cambridgeshire · 2025 data · github.com/charlesso/uk-secondary-school-league
+  Generated with custom SQS &amp; percentile indices · Secondary &amp; Primary · Greater Manchester · Greater London · 2025 data · github.com/charlesso/uk-secondary-school-league
 </div>
 
 <!-- School data is inlined per academic year by build_data.py so the page works standalone (no server, no fetch). -->
@@ -1403,6 +1397,11 @@ document.getElementById('phaseSwitch').addEventListener('click', e => {
   btn.classList.add('active');
   currentPhase = btn.dataset.phase;
   document.body.classList.toggle('phase-primary', currentPhase === 'primary');
+  if (currentPhase === 'primary' && currentView === 'destinations') {
+    currentView = 'league';
+    document.querySelectorAll('#viewSwitch .phase-btn').forEach(t => t.classList.remove('active'));
+    document.querySelector('#viewSwitch [data-view="league"]').classList.add('active');
+  }
   render();
 });
 
