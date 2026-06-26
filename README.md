@@ -150,6 +150,23 @@ nationally — so it measures standing among local peers and, unlike min-max,
 isn't distorted by a single outlier school. A solo-school LA falls back to a
 neutral 50.
 
+**Cohort-size adjustment (empirical-Bayes shrinkage).** A score from a 15-pupil
+class is far noisier than one from 90 pupils, so small schools otherwise dominate
+both ends of the table by luck. Before computing the percentiles, each raw metric
+is pulled toward a reference mean by a weight that shrinks with cohort size:
+
+```
+adjusted = (n × raw  +  K × reference_mean) / (n + K)
+```
+
+where `n` is the KS2 cohort (`TELIG`) and `K = SHRINK_K` (default **30**, ≈ the
+national median cohort, set in `build_data.py`). A school keeps `n/(n+K)` of its
+own signal — 33% at n=15, 75% at n=90. National indices (API, GRI) shrink toward
+the national mean; 11+ shrinks toward each school's **LA** mean. The **raw
+percentages are still stored and displayed unchanged** — only the percentiles,
+and therefore the index scores and ranking, are adjusted. Each row shows its
+cohort `n`, flagged ⚠ when `n < 16`. Raise `K` for stronger damping.
+
 Interpretation bands (apply to API / GRI / 11+ identically):
 
 | Score range | Meaning            |
@@ -195,6 +212,7 @@ four metric columns specific to the phase.
 | `name`, `area`, `type`, `lea` | School name, borough/town, classification, DfE LEA code (3-digit).  |
 | `region`     | One of `manchester`, `london`, `cambridge`, `other` — drives the region-tab filter. |
 | `urn`        | DfE Unique Reference Number — the join key used to merge destination data.           |
+| `n`          | KS2 cohort size (`TELIG`, primary only) — drives the empirical-Bayes shrinkage.       |
 | `priv`       | Present and `true` for independent / non-maintained schools (KS4 only).              |
 | `rwm, hs, read, maths, gps` | Raw KS2: RWM-expected %, RWM-higher %, reading / maths / GPS scaled scores. |
 | `pe, ph, pr, pm, pg` | National percentiles for RWM-expected / RWM-higher / reading / maths / GPS. |

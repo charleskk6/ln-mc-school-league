@@ -234,6 +234,13 @@ def build_secondary(src_dir):
     return rows
 
 
+# Shrinkage strength for the primary indices, in "pseudo-pupils". A school keeps
+# n/(n+K) of its own signal; the rest is pulled toward the reference mean. K≈30
+# (~the national median KS2 cohort) shrinks a 30-pupil school halfway to the mean
+# while a 90-pupil school keeps ~75% of its own value. Raise K for more damping.
+SHRINK_K = 30
+
+
 def build_primary(src_dir):
     src = os.path.join(src_dir, "england_ks2final.csv")
     rows = []
@@ -256,6 +263,7 @@ def build_primary(src_dir):
                 "lea": lea,
                 "urn": parse_int(row.get("URN")),
                 "region": lea_region(lea),
+                "n": parse_int(row.get("TELIG")) or 0,   # KS2 cohort size
                 "rwm": round(rwm, 1),
                 "hs": round(hs, 1),
                 "read": round(read, 1),
@@ -263,21 +271,32 @@ def build_primary(src_dir):
                 "gps": round(gps, 1),
             })
 
-    # National percentiles across the full mainstream set.
-    pe = percentile_ranks([r["rwm"] for r in rows])
-    ph = percentile_ranks([r["hs"] for r in rows])
-    pr = percentile_ranks([r["read"] for r in rows])
-    pm = percentile_ranks([r["maths"] for r in rows])
-    pg = percentile_ranks([r["gps"] for r in rows])
-    for i, r in enumerate(rows):
-        r["pe"] = round(pe[i], 1)
-        r["ph"] = round(ph[i], 1)
-        r["pr"] = round(pr[i], 1)
-        r["pm"] = round(pm[i], 1)
-        r["pg"] = round(pg[i], 1)
+    # ── Reliability-adjusted ranking (empirical-Bayes / Bayesian-average
+    # shrinkage by cohort size) ────────────────────────────────────────────────
+    # A score from a small cohort is far noisier than one from a large cohort, so
+    # small schools otherwise dominate both extremes of the table by luck. We pull
+    # each metric toward a reference mean by a weight that shrinks with cohort
+    # size — adj = (n*obs + K*ref) / (n + K) — and rank on the adjusted value.
+    # Raw metrics are still stored/shown unchanged; only the percentiles (and thus
+    # the indices) use the adjusted values. National indices shrink toward the
+    # national mean; the within-LA index shrinks toward each school's LA mean.
+    METRICS = ("rwm", "hs", "read", "maths", "gps")
 
-    # 11+ Readiness: percentile rank within each LA on hs, read, maths, gps.
-    # (Robust to a single outlier school, unlike min-max; solo-school LA -> 50.)
+    def _adj(r, field, ref):
+        n = r["n"]
+        return (n * r[field] + SHRINK_K * ref) / (n + SHRINK_K) if n > 0 else ref
+
+    # National percentiles on nationally-shrunk metrics.
+    nat_mean = {m: sum(r[m] for r in rows) / len(rows) for m in METRICS}
+    for field, key in (("rwm", "pe"), ("hs", "ph"), ("read", "pr"),
+                       ("maths", "pm"), ("gps", "pg")):
+        pcts = percentile_ranks([_adj(r, field, nat_mean[field]) for r in rows])
+        for i, r in enumerate(rows):
+            r[key] = round(pcts[i], 1)
+
+    # 11+ Readiness: percentile rank within each LA on LA-shrunk metrics.
+    # (Solo-school LA -> 50. Shrinking toward the LA mean keeps the comparison
+    # local while still damping small-cohort noise.)
     by_lea = defaultdict(list)
     for i, r in enumerate(rows):
         by_lea[r["lea"]].append(i)
@@ -288,7 +307,9 @@ def build_primary(src_dir):
                 rows[i]["lh"] = rows[i]["lr"] = rows[i]["lm"] = rows[i]["lg"] = 50.0
             continue
         for field, key in (("hs", "lh"), ("read", "lr"), ("maths", "lm"), ("gps", "lg")):
-            pcts = percentile_ranks([rows[i][field] for i in idxs])
+            la_mean = sum(rows[i][field] for i in idxs) / len(idxs)
+            adj = [_adj(rows[i], field, la_mean) for i in idxs]
+            pcts = percentile_ranks(adj)
             for k, i in enumerate(idxs):
                 rows[i][key] = round(pcts[k], 1)
     return rows
