@@ -1327,7 +1327,7 @@ function buildRow(s, rank, phaseCfg, maxBar, showMedals = true) {
           ${pinHTML}
           <div class="school-cell-body">
             <div class="school-name">${s.name}</div>
-            <div class="school-meta">${s.area} · ${s.type}${s.n ? ` · <span title="KS2 cohort size — the index is reliability-adjusted for this">${s.n} pupils${s.n < 16 ? ' <span style="color:var(--orange)" title="Small cohort: score shrunk toward the average">⚠</span>' : ''}</span>` : ''}</div>
+            <div class="school-meta">${s.area} · ${s.type}${s.n ? ` · <span title="KS2 cohort size — the index is reliability-adjusted for this">${s.n} pupils${s.n < 16 ? ' <span style="color:var(--orange)" title="Small cohort: score shrunk toward the average">⚠</span>' : ''}</span>` : ''}${(currentView === 'destinations' && s.d18_cohort) ? ` · <span title="16-18 (sixth-form) cohort behind the post-18 destination figures">${s.d18_cohort} in sixth form${s.d18_cohort < 16 ? ' <span style="color:var(--orange)" title="Small sixth-form cohort — post-18 percentages are volatile">⚠</span>' : ''}</span>` : ''}</div>
           </div>
         </div>
       </td>
